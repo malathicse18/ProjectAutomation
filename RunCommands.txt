@@ -1,0 +1,136 @@
+To run the refactored `TaskManager` class, you can use the **Command-Line Interface (CLI)** provided in the script. Here's a step-by-step guide on how to run the program and use its features:
+
+---
+
+### **1. Prerequisites**
+Before running the script, ensure you have the following:
+1. **Python Installed**: Python 3.6 or higher.
+2. **Required Libraries**: Install the required libraries using `pip`:
+   ```bash
+   pip install requests beautifulsoup4 pymongo apscheduler python-dotenv pandas fpdf python-docx
+   ```
+3. **MongoDB**: Ensure MongoDB is running locally (or update the `MONGO_URI` in the code if using a remote MongoDB instance).
+4. **Environment Variables**: Create a `.env` file in the same directory as the script with the following content (for email automation):
+   ```plaintext
+   SENDER_EMAIL=your_email@gmail.com
+   SENDER_PASSWORD=your_app_password
+   ```
+   Replace `your_email@gmail.com` and `your_app_password` with your Gmail credentials. If you're using Gmail, you may need to generate an **App Password** (enable 2FA in your Google account first).
+
+---
+
+### **2. Running the Script**
+Save the refactored code in a file, e.g., `task_manager.py`. Then, open a terminal and navigate to the directory where the script is saved.
+
+#### **Basic Command**
+```bash
+python task_manager.py
+```
+This starts the scheduler and keeps it running in the background. You can stop it by pressing `Ctrl+C`.
+
+---
+
+### **3. Adding Tasks**
+You can add tasks using the `--add` argument. Here are examples for each task type:
+
+#### **File Organization Task**
+Organize files in a directory every 10 minutes:
+```bash
+python task_manager.py --add 10 --unit minutes --task-type organize_files --directory /path/to/directory
+```
+
+#### **File Deletion Task**
+Delete files older than 7 days in a directory every day:
+```bash
+python task_manager.py --add 1 --unit days --task-type delete_files --directory /path/to/directory --age-days 7 --formats .log .tmp
+```
+
+#### **Email Automation Task**
+Send emails every hour:
+```bash
+python task_manager.py --add 1 --unit hours --task-type send_email --recipient-email recipient@example.com --subject "Test Email" --message "Hello, this is a test email." --attachments file1.txt file2.pdf
+```
+
+#### **Gold Rate Scraping Task**
+Scrape gold rates every 30 minutes:
+```bash
+python task_manager.py --add 30 --unit minutes --task-type get_gold_rate
+```
+
+#### **File Conversion Task**
+Convert `.txt` files to `.csv` every 5 minutes:
+```bash
+python task_manager.py --add 5 --unit minutes --task-type convert_file --input-path /path/to/input.txt --output-path /path/to/output.csv --input-format txt --output-format csv
+```
+
+#### **File Compression Task**
+Compress files in a directory to `.zip` every day:
+```bash
+python task_manager.py --add 1 --unit days --task-type compress_files --directory /path/to/directory --output-path /path/to/output.zip --compression-format zip
+```
+
+---
+
+### **4. Listing Tasks**
+To list all scheduled tasks:
+```bash
+python task_manager.py --list
+```
+
+---
+
+### **5. Removing Tasks**
+To remove a task by its name:
+```bash
+python task_manager.py --remove task_name
+```
+Replace `task_name` with the actual task name (e.g., `organize_files_task_1`).
+
+---
+
+### **6. Starting the Scheduler**
+If no CLI arguments are provided, the script starts the scheduler and keeps it running:
+```bash
+python task_manager.py
+```
+You can stop the scheduler by pressing `Ctrl+C`.
+
+---
+
+### **7. Example Workflow**
+1. **Add a Task**:
+   ```bash
+   python task_manager.py --add 10 --unit minutes --task-type organize_files --directory /path/to/directory
+   ```
+2. **List Tasks**:
+   ```bash
+   python task_manager.py --list
+   ```
+3. **Start the Scheduler**:
+   ```bash
+   python task_manager.py
+   ```
+4. **Remove a Task**:
+   ```bash
+   python task_manager.py --remove organize_files_task_1
+   ```
+
+---
+
+### **8. Logs and MongoDB**
+- **Logs**: All logs are saved in `task_manager.log`.
+- **MongoDB**: Task execution details are logged in the `task_manager_db.logs` collection. You can view them using a MongoDB client like **MongoDB Compass** or the MongoDB shell:
+  ```bash
+  mongo
+  use task_manager_db
+  db.logs.find().pretty()
+  ```
+
+---
+
+### **9. Stopping the Program**
+To stop the scheduler, press `Ctrl+C` in the terminal where the script is running.
+
+---
+
+Let me know if you need further assistance! 😊
