@@ -3,3 +3,7 @@
 usage: task_manager.py [-h] {add} ...
 task_manager.py: error: argument command: invalid choice: '1' (choose from 'add')
 (venv) PS C:\Users\malatk\Music\ProjectAutomation\TestFolder> 
+
+=================================
+
+python task_manager.py add --interval 1 --unit minutes --task-type organize_files --directory C:\Users\malatk\Music\ProjectAutomation\TestFolder
