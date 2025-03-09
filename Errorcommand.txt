@@ -16,3 +16,43 @@ Scheduler started. Press Ctrl+C to stop.
 Scheduler stopped.
 (venv) PS C:\Users\malatk\Music\ProjectAutomation\TestFolder> 
 
+===============================
+if __name__ == "__main__":
+    # Create an object of the TaskManager class
+    manager = TaskManager()
+
+    # Parse command-line arguments
+    args = parser.parse_args()
+
+    # Handle commands
+    if args.command == "add":
+        # Add a new task
+        manager.add_task(
+            interval=args.interval,
+            unit=args.unit,
+            task_type=args.task_type,
+            directory=args.directory,
+            age_days=args.age_days,
+            formats=args.formats,
+            recipient_email=args.recipient_email,
+            subject=args.subject,
+            message=args.message,
+            attachments=args.attachments,
+            input_path=args.input_path,
+            output_path=args.output_path,
+            input_format=args.input_format,
+            output_format=args.output_format,
+        )
+    elif args.command == "remove":
+        # Remove a task
+        manager.remove_task(args.task_name)
+    elif args.command == "list":
+        # List all tasks
+        manager.list_tasks()
+    elif args.command == "start":
+        # Start the scheduler
+        manager.start_scheduler()
+    else:
+        # If no valid command is provided, show help
+        parser.print_help()
+
