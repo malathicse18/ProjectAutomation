@@ -1,0 +1,8 @@
+requests
+beautifulsoup4
+pymongo
+apscheduler
+python-dotenv
+pandas
+fpdf2
+python-docx
