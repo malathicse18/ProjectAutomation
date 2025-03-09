@@ -350,4 +350,47 @@ if __name__ == "__main__":
     add_parser.add_argument("--input-path", type=str, help="Input file path for conversion")
     add_parser.add_argument("--output-path", type=str, help="Output file path for conversion or compression")
     add_parser.add_argument("--input-format", type=str, help="Input file format for conversion")
-    add_parser.add_argument("--output-format", type=str, help="Output file format for conversion
+    add_parser.add_argument("--output-format", type=str, help="Output file format for conversion")
+
+    # Remove Task Parser
+    remove_parser = subparsers.add_parser("remove", help="Remove a task")
+    remove_parser.add_argument("--task-name", type=str, required=True, help="Name of the task to remove")
+
+    # List Tasks Parser
+    list_parser = subparsers.add_parser("list", help="List all scheduled tasks")
+
+    # Start Scheduler Parser
+    start_parser = subparsers.add_parser("start", help="Start the scheduler")
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Create TaskManager object
+    manager = TaskManager()
+
+    # Handle commands
+    if args.command == "add":
+        manager.add_task(
+            interval=args.interval,
+            unit=args.unit,
+            task_type=args.task_type,
+            directory=args.directory,
+            age_days=args.age_days,
+            formats=args.formats,
+            recipient_email=args.recipient_email,
+            subject=args.subject,
+            message=args.message,
+            attachments=args.attachments,
+            input_path=args.input_path,
+            output_path=args.output_path,
+            input_format=args.input_format,
+            output_format=args.output_format,
+        )
+    elif args.command == "remove":
+        manager.remove_task(args.task_name)
+    elif args.command == "list":
+        manager.list_tasks()
+    elif args.command == "start":
+        manager.start_scheduler()
+    else:
+        parser.print_help()
