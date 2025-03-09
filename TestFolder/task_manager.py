@@ -1,11 +1,9 @@
 import os
 import sys
-print("Arguments received:", sys.argv)
 import shutil
 import time
 import logging
 import json
-import threading
 import argparse
 import requests
 import smtplib
@@ -90,7 +88,6 @@ class TaskManager:
         with open(self.tasks_file, "w") as f:
             json.dump(tasks, f, indent=4)
 
-    # File Organization Task
     def organize_files(self, directory):
         """Organize files in the given directory based on their extensions."""
         try:
@@ -114,151 +111,12 @@ class TaskManager:
             self.logger.error(f"Error organizing files in '{directory}': {e}")
             self.log_to_mongodb("organize_files", {"directory": directory, "error": str(e)}, "Error", level="ERROR")
 
-    # File Deletion Task
-    def delete_files(self, directory, age_days, formats):
-        """Delete files older than `age_days` and matching `formats`."""
-        try:
-            cutoff_time = time.time() - (age_days * 86400)
-            deleted_files = []
-            for root, _, files in os.walk(directory):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    file_extension = os.path.splitext(file)[1].lower()
-                    if file_extension in formats and os.path.getmtime(file_path) < cutoff_time:
-                        os.remove(file_path)
-                        deleted_files.append(file_path)
-                        self.logger.info(f"Deleted file: {file_path}")
-            if deleted_files:
-                self.log_to_mongodb("delete_files", {"deleted_files": deleted_files}, "Files deleted")
-            else:
-                self.logger.info("No files deleted.")
-                self.log_to_mongodb("delete_files", {}, "No files deleted")
-        except Exception as e:
-            self.logger.error(f"Error deleting files: {e}")
-            self.log_to_mongodb("delete_files", {"directory": directory, "age_days": age_days, "formats": formats}, f"Error: {e}", level="ERROR")
-
-    # Email Automation Task
-    def send_email(self, recipient_email, subject, message, attachments=None):
-        """Send an email with optional attachments."""
-        SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-        SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
-        if not SENDER_EMAIL or not SENDER_PASSWORD:
-            self.logger.error("Missing email credentials in .env file.")
-            return False
-
-        msg = MIMEMultipart()
-        msg["From"] = SENDER_EMAIL
-        msg["To"] = recipient_email
-        msg["Subject"] = subject
-        msg.attach(MIMEText(message, "plain"))
-
-        if attachments:
-            for attachment in attachments:
-                try:
-                    with open(attachment, "rb") as file:
-                        part = MIMEBase("application", "octet-stream")
-                        part.set_payload(file.read())
-                    encoders.encode_base64(part)
-                    part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(attachment)}")
-                    msg.attach(part)
-                except FileNotFoundError:
-                    self.logger.error(f"Attachment '{attachment}' not found.")
-
-        try:
-            server = smtplib.SMTP("smtp.gmail.com", 587)
-            server.starttls()
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.sendmail(SENDER_EMAIL, recipient_email, msg.as_string())
-            server.quit()
-            self.logger.info(f"Email sent to {recipient_email}")
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to send email to {recipient_email}: {e}")
-            return False
-
-    # Gold Rate Scraping Task
-    def get_gold_rate(self):
-        """Scrape gold rates from a website."""
-        url = "https://www.bankbazaar.com/gold-rate-tamil-nadu.html"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-            self.logger.error(f"Error fetching gold rates: {response.status_code}")
-            return None
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        price_span = soup.find("span", class_="white-space-nowrap")
-        if price_span:
-            gold_price = price_span.get_text(strip=True)
-            self.logger.info(f"Gold rate: {gold_price}")
-            return gold_price
-        else:
-            self.logger.error("Gold price not found.")
-            return None
-
-    # File Conversion and Compression Task
-    def convert_file(self, input_path, output_path, input_format, output_format):
-        """Convert a file from one format to another."""
-        try:
-            if input_format == "txt" and output_format == "csv":
-                with open(input_path, "r") as f:
-                    content = f.read()
-                with open(output_path, "w") as f:
-                    f.write(content.upper())
-            elif input_format == "txt" and output_format == "pdf":
-                with open(input_path, "r") as f:
-                    content = f.read()
-                pdf = FPDF()
-                pdf.add_page()
-                pdf.set_font("Arial", size=12)
-                pdf.multi_cell(0, 10, content)
-                pdf.output(output_path)
-            elif input_format == "csv" and output_format == "xlsx":
-                df = pd.read_csv(input_path)
-                df.to_excel(output_path, index=False)
-            elif input_format == "docx" and output_format == "pdf":
-                doc = Document(input_path)
-                pdf = FPDF()
-                pdf.add_page()
-                for para in doc.paragraphs:
-                    pdf.set_font("Arial", size=12)
-                    pdf.multi_cell(0, 10, para.text)
-                pdf.output(output_path)
-            else:
-                raise ValueError("Unsupported conversion format")
-            self.logger.info(f"Converted '{input_path}' to '{output_path}'")
-            self.log_to_mongodb("convert_file", {"input": input_path, "output": output_path}, "Conversion successful")
-        except Exception as e:
-            self.logger.error(f"Error converting file: {e}")
-            self.log_to_mongodb("convert_file", {"input": input_path, "output": output_path}, f"Error: {e}", level="ERROR")
-
-    def compress_files(self, directory, output_path, compression_format):
-        """Compress files in a directory."""
-        try:
-            if compression_format == "zip":
-                with zipfile.ZipFile(output_path, 'w') as zipf:
-                    for root, _, files in os.walk(directory):
-                        for file in files:
-                            zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), directory))
-            elif compression_format == "tar":
-                with tarfile.open(output_path, 'w') as tarf:
-                    tarf.add(directory, arcname=os.path.basename(directory))
-            else:
-                raise ValueError("Unsupported compression format")
-            self.logger.info(f"Compressed '{directory}' to '{output_path}'")
-            self.log_to_mongodb("compress_files", {"directory": directory, "output": output_path}, "Compression successful")
-        except Exception as e:
-            self.logger.error(f"Error compressing files: {e}")
-            self.log_to_mongodb("compress_files", {"directory": directory, "output": output_path}, f"Error: {e}", level="ERROR")
-
-    # Scheduler Management
     def add_task(self, interval, unit, task_type, **kwargs):
         """Add a new task to the scheduler."""
         tasks = self.load_tasks()
         task_name = f"{task_type}_task_{len(tasks) + 1}"
         trigger = IntervalTrigger(**{unit: interval})
+
         if task_type == "organize_files":
             self.scheduler.add_job(self.organize_files, trigger, args=[kwargs["directory"]], id=task_name)
         elif task_type == "delete_files":
@@ -279,32 +137,10 @@ class TaskManager:
         self.logger.info(f"Added task '{task_name}'")
         self.log_to_mongodb("add_task", {"task_name": task_name, "details": tasks[task_name]}, "Task added")
 
-    def remove_task(self, task_name):
-        """Remove a task from the scheduler."""
-        tasks = self.load_tasks()
-        if task_name in tasks:
-            self.scheduler.remove_job(task_name)
-            del tasks[task_name]
-            self.save_tasks(tasks)
-            self.logger.info(f"Removed task '{task_name}'")
-            self.log_to_mongodb("remove_task", {"task_name": task_name}, "Task removed")
-        else:
-            self.logger.warning(f"Task '{task_name}' not found")
-            self.log_to_mongodb("remove_task", {"task_name": task_name}, "Task not found", level="WARNING")
-
-    def list_tasks(self):
-        """List all scheduled tasks."""
-        tasks = self.load_tasks()
-        if not tasks:
-            print("No tasks scheduled.")
-        else:
-            print("Scheduled tasks:")
-            for task_name, details in tasks.items():
-                print(f"- {task_name}: {details}")
-
     def start_scheduler(self):
         """Start the scheduler."""
         self.scheduler.start()
+        print("Scheduler started. Press Ctrl+C to stop.")
         try:
             while True:
                 time.sleep(1)
@@ -351,4 +187,32 @@ if __name__ == "__main__":
     add_parser.add_argument("--output-path", type=str, help="Output file path for conversion or compression")
     add_parser.add_argument("--input-format", type=str, help="Input file format for conversion")
     add_parser.add_argument("--output-format", type=str, help="Output file format for conversion")
-   
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Initialize TaskManager
+    task_manager = TaskManager()
+
+    # Handle "add" command
+    if args.command == "add":
+        task_manager.add_task(
+            interval=args.interval,
+            unit=args.unit,
+            task_type=args.task_type,
+            directory=args.directory,
+            age_days=args.age_days,
+            formats=args.formats,
+            recipient_email=args.recipient_email,
+            subject=args.subject,
+            message=args.message,
+            attachments=args.attachments,
+            input_path=args.input_path,
+            output_path=args.output_path,
+            input_format=args.input_format,
+            output_format=args.output_format
+        )
+        print(f"Task added: {args.task_type}")
+
+    # Start the scheduler
+    task_manager.start_scheduler()
