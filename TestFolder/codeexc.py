@@ -1,6 +1,6 @@
 import os
 import sys
-print("Arguments received:", sys.argv)
+# print("Arguments received:", sys.argv)
 import shutil
 import time
 import logging
@@ -255,29 +255,42 @@ class TaskManager:
 
     # Scheduler Management
     def add_task(self, interval, unit, task_type, **kwargs):
-        """Add a new task to the scheduler."""
+        """Add a new task, preventing duplicates."""
         tasks = self.load_tasks()
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}  # Filter out None values
+        new_task_details = {"interval": interval, "unit": unit, "task_type": task_type, **filtered_kwargs}
+
+        # Check for duplicates
+        for existing_task_details in tasks.values():
+            if existing_task_details == new_task_details:
+                print(f"Task Exists already {existing_task_details}. Task not added.")
+                return  # Exit if duplicate is found
+
         task_name = f"{task_type}_task_{len(tasks) + 1}"
         trigger = IntervalTrigger(**{unit: interval})
+
         if task_type == "organize_files":
-            self.scheduler.add_job(self.organize_files, trigger, args=[kwargs["directory"]], id=task_name)
+            self.scheduler.add_job(self.organize_files, trigger, args=[filtered_kwargs["directory"]], id=task_name)
         elif task_type == "delete_files":
-            self.scheduler.add_job(self.delete_files, trigger, args=[kwargs["directory"], kwargs["age_days"], kwargs["formats"]], id=task_name)
+            self.scheduler.add_job(self.delete_files, trigger, args=[filtered_kwargs["directory"], filtered_kwargs["age_days"], filtered_kwargs["formats"]], id=task_name)
         elif task_type == "send_email":
-            self.scheduler.add_job(self.send_email, trigger, args=[kwargs["recipient_email"], kwargs["subject"], kwargs["message"], kwargs["attachments"]], id=task_name)
+            self.scheduler.add_job(self.send_email, trigger, args=[filtered_kwargs["recipient_email"], filtered_kwargs["subject"], filtered_kwargs["message"], filtered_kwargs["attachments"]], id=task_name)
         elif task_type == "get_gold_rate":
             self.scheduler.add_job(self.get_gold_rate, trigger, id=task_name)
         elif task_type == "convert_file":
-            self.scheduler.add_job(self.convert_file, trigger, args=[kwargs["input_path"], kwargs["output_path"], kwargs["input_format"], kwargs["output_format"]], id=task_name)
+            self.scheduler.add_job(self.convert_file, trigger, args=[filtered_kwargs["input_path"], filtered_kwargs["output_path"], filtered_kwargs["input_format"], filtered_kwargs["output_format"]], id=task_name)
         elif task_type == "compress_files":
-            self.scheduler.add_job(self.compress_files, trigger, args=[kwargs["directory"], kwargs["output_path"], kwargs["compression_format"]], id=task_name)
+            self.scheduler.add_job(self.compress_files, trigger, args=[filtered_kwargs["directory"], filtered_kwargs["output_path"], filtered_kwargs["compression_format"]], id=task_name)
         else:
             raise ValueError("Unsupported task type")
 
-        tasks[task_name] = {"interval": interval, "unit": unit, "task_type": task_type, **kwargs}
+        tasks[task_name] = new_task_details
         self.save_tasks(tasks)
         self.logger.info(f"Added task '{task_name}'")
         self.log_to_mongodb("add_task", {"task_name": task_name, "details": tasks[task_name]}, "Task added")
+
+        print(f"Task '{task_name}' added successfully.")
+        print(f"Task details: {tasks[task_name]}")
 
     def remove_task(self, task_name):
         """Remove a task from the scheduler."""
@@ -288,19 +301,22 @@ class TaskManager:
             self.save_tasks(tasks)
             self.logger.info(f"Removed task '{task_name}'")
             self.log_to_mongodb("remove_task", {"task_name": task_name}, "Task removed")
+            # Display success message
+            print(f"Task '{task_name}' removed successfully.")
         else:
             self.logger.warning(f"Task '{task_name}' not found")
             self.log_to_mongodb("remove_task", {"task_name": task_name}, "Task not found", level="WARNING")
 
     def list_tasks(self):
-        """List all scheduled tasks."""
+        """List all scheduled tasks, filtering out None values."""
         tasks = self.load_tasks()
         if not tasks:
             print("No tasks scheduled.")
         else:
             print("Scheduled tasks:")
             for task_name, details in tasks.items():
-                print(f"- {task_name}: {details}")
+                filtered_details = {k: v for k, v in details.items() if v is not None}
+                print(f"- {task_name}: {filtered_details}")
 
     def start_scheduler(self):
         """Start the scheduler."""

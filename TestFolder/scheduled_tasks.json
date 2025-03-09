@@ -1,0 +1,26 @@
+{
+    "organize_files_task_1": {
+        "interval": 2,
+        "unit": "minutes",
+        "task_type": "organize_files",
+        "directory": "C:\\Users\\malatk\\Music\\ProjectAutomation\\TestFolder"
+    },
+    "organize_files_task_2": {
+        "interval": 3,
+        "unit": "minutes",
+        "task_type": "organize_files",
+        "directory": "C:\\Users\\malatk\\Music\\ProjectAutomation\\TestFolder"
+    },
+    "organize_files_task_3": {
+        "interval": 3,
+        "unit": "minutes",
+        "task_type": "organize_files",
+        "directory": "C:\\Users\\malatk\\Music\\ProjectAutomation\\TestFolder"
+    },
+    "organize_files_task_4": {
+        "interval": 3,
+        "unit": "minutes",
+        "task_type": "organize_files",
+        "directory": "C:\\Users\\malatk\\Music\\ProjectAutomation\\TestFolder"
+    }
+}
