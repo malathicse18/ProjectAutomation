@@ -1,6 +1,5 @@
 import os
-import sys
-print("Arguments received:", sys.argv)
+import re
 import shutil
 import time
 import logging
@@ -119,7 +118,7 @@ class TaskManager:
         """Delete files older than `age_days` and matching `formats`."""
         try:
             cutoff_time = time.time() - (age_days * 86400)
-            deleted_files = []
+            deleted_files =[]# Initialize deleted_files as an empty list
             for root, _, files in os.walk(directory):
                 for file in files:
                     file_path = os.path.join(root, file)
@@ -139,7 +138,60 @@ class TaskManager:
 
     # Email Automation Task
     def send_email(self, recipient_email, subject, message, attachments=None):
-        """Send an email with optional attachments."""
+        """Send email(s) with optional attachments, handling both single and list recipients."""
+        SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+        SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
+        if not SENDER_EMAIL or not SENDER_PASSWORD:
+            self.logger.error("Missing email credentials in .env file.")
+            return False
+
+        if isinstance(recipient_email, str) and (recipient_email.endswith(".csv") or recipient_email.endswith(".xlsx")):
+            # Process email list from file
+            try:
+                if recipient_email.endswith(".csv"):
+                    df = pd.read_csv(recipient_email)
+                elif recipient_email.endswith(".xlsx"):
+                    df = pd.read_excel(recipient_email)
+                else:
+                    raise ValueError("Unsupported email list format. Only CSV and XLSX are supported.")
+
+                if os.path.isfile(message):
+                    with open(message, "r") as f:
+                        message_template = f.read()
+                else:
+                    message_template = message
+
+                for index, row in df.iterrows():
+                    email = row.get("email")
+                    name = row.get("name", "")
+                    if not self.is_valid_email(email):
+                        self.logger.warning(f"Invalid email: {email}")
+                        self.log_to_mongodb("send_email", {"recipient": email}, "Invalid email", level="WARNING")
+                        continue
+                    msg_content = message_template.replace("{name}", name)
+                    if self._send_single_email(email, subject, msg_content, attachments):
+                        self.log_to_mongodb("send_email", {"recipient": email, "subject": subject}, "Email sent")
+                    else:
+                        self.log_to_mongodb("send_email", {"recipient": email, "subject": subject}, "Email failed", level="ERROR")
+
+            except Exception as e:
+                self.logger.error(f"Error sending emails from file: {e}")
+                self.log_to_mongodb("send_email", {"email_list": recipient_email, "message": message, "subject": subject, "attachments": attachments}, f"Error: {e}", level="ERROR")
+                return False
+
+        else:
+            # Process single recipient email
+            if self._send_single_email(recipient_email, subject, message, attachments):
+                self.logger.info(f"Email sent to {recipient_email}")
+                self.log_to_mongodb("send_email", {"recipient": recipient_email, "subject": subject}, "Email sent")
+                return True
+            else:
+                self.logger.error(f"Failed to send email to {recipient_email}")
+                self.log_to_mongodb("send_email", {"recipient": recipient_email, "subject": subject}, "Email failed", level="ERROR")
+                return False
+
+    def _send_single_email(self, recipient_email, subject, message, attachments=None):
+        """Helper method to send a single email."""
         SENDER_EMAIL = os.getenv("SENDER_EMAIL")
         SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
         if not SENDER_EMAIL or not SENDER_PASSWORD:
@@ -170,11 +222,15 @@ class TaskManager:
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.sendmail(SENDER_EMAIL, recipient_email, msg.as_string())
             server.quit()
-            self.logger.info(f"Email sent to {recipient_email}")
             return True
         except Exception as e:
             self.logger.error(f"Failed to send email to {recipient_email}: {e}")
             return False
+
+    def is_valid_email(self, email):
+        """Validate email format."""
+        pattern = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+        return re.match(pattern, email) is not None
 
     # Gold Rate Scraping Task
     def get_gold_rate(self):
@@ -255,29 +311,44 @@ class TaskManager:
 
     # Scheduler Management
     def add_task(self, interval, unit, task_type, **kwargs):
-        """Add a new task to the scheduler."""
+        """Add a new task, preventing duplicates."""
         tasks = self.load_tasks()
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}  # Filter out None values
+        new_task_details = {"interval": interval, "unit": unit, "task_type": task_type, **filtered_kwargs}
+
+        # Check for duplicates
+        for existing_task_details in tasks.values():
+            if existing_task_details == new_task_details:
+                print(f"Task Exists already {existing_task_details}. Task not added.")
+                return  # Exit if duplicate is found
+
         task_name = f"{task_type}_task_{len(tasks) + 1}"
         trigger = IntervalTrigger(**{unit: interval})
+
         if task_type == "organize_files":
-            self.scheduler.add_job(self.organize_files, trigger, args=[kwargs["directory"]], id=task_name)
+            self.scheduler.add_job(self.organize_files, trigger, args=[filtered_kwargs["directory"]], id=task_name)
         elif task_type == "delete_files":
-            self.scheduler.add_job(self.delete_files, trigger, args=[kwargs["directory"], kwargs["age_days"], kwargs["formats"]], id=task_name)
+            self.scheduler.add_job(self.delete_files, trigger, args=[filtered_kwargs["directory"], filtered_kwargs["age_days"], filtered_kwargs["formats"]], id=task_name)
         elif task_type == "send_email":
-            self.scheduler.add_job(self.send_email, trigger, args=[kwargs["recipient_email"], kwargs["subject"], kwargs["message"], kwargs["attachments"]], id=task_name)
+            # Use .get() with a default value for attachments
+            attachments =filtered_kwargs.get("attachments", None)
+            self.scheduler.add_job(self.send_email, trigger, args=[filtered_kwargs["recipient_email"], filtered_kwargs["subject"], filtered_kwargs["message"], attachments], id=task_name)
         elif task_type == "get_gold_rate":
             self.scheduler.add_job(self.get_gold_rate, trigger, id=task_name)
         elif task_type == "convert_file":
-            self.scheduler.add_job(self.convert_file, trigger, args=[kwargs["input_path"], kwargs["output_path"], kwargs["input_format"], kwargs["output_format"]], id=task_name)
+            self.scheduler.add_job(self.convert_file, trigger, args=[filtered_kwargs["input_path"], filtered_kwargs["output_path"], filtered_kwargs["input_format"], filtered_kwargs["output_format"]], id=task_name)
         elif task_type == "compress_files":
-            self.scheduler.add_job(self.compress_files, trigger, args=[kwargs["directory"], kwargs["output_path"], kwargs["compression_format"]], id=task_name)
+            self.scheduler.add_job(self.compress_files, trigger, args=[filtered_kwargs["directory"], filtered_kwargs["output_path"], filtered_kwargs["compression_format"]], id=task_name)
         else:
             raise ValueError("Unsupported task type")
 
-        tasks[task_name] = {"interval": interval, "unit": unit, "task_type": task_type, **kwargs}
+        tasks[task_name] = new_task_details
         self.save_tasks(tasks)
         self.logger.info(f"Added task '{task_name}'")
         self.log_to_mongodb("add_task", {"task_name": task_name, "details": tasks[task_name]}, "Task added")
+
+        print(f"Task '{task_name}' added successfully.")
+        print(f"Task details: {tasks[task_name]}")
 
     def remove_task(self, task_name):
         """Remove a task from the scheduler."""
@@ -288,29 +359,22 @@ class TaskManager:
             self.save_tasks(tasks)
             self.logger.info(f"Removed task '{task_name}'")
             self.log_to_mongodb("remove_task", {"task_name": task_name}, "Task removed")
+            # Display success message
+            print(f"Task '{task_name}' removed successfully.")
         else:
             self.logger.warning(f"Task '{task_name}' not found")
             self.log_to_mongodb("remove_task", {"task_name": task_name}, "Task not found", level="WARNING")
 
     def list_tasks(self):
-        """List all scheduled tasks."""
+        """List all scheduled tasks, filtering out None values."""
         tasks = self.load_tasks()
         if not tasks:
             print("No tasks scheduled.")
         else:
             print("Scheduled tasks:")
             for task_name, details in tasks.items():
-                print(f"- {task_name}: {details}")
-
-    def start_scheduler(self):
-        """Start the scheduler."""
-        self.scheduler.start()
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("Scheduler stopped.")
-            self.scheduler.shutdown()
+                filtered_details = {k: v for k, v in details.items() if v is not None}
+                print(f"- {task_name}: {filtered_details}")
 
     def load_and_schedule_tasks(self):
         """Load and schedule tasks from the JSON file."""
@@ -322,13 +386,23 @@ class TaskManager:
             elif details["task_type"] == "delete_files":
                 self.scheduler.add_job(self.delete_files, trigger, args=[details["directory"], details["age_days"], details["formats"]], id=task_name)
             elif details["task_type"] == "send_email":
-                self.scheduler.add_job(self.send_email, trigger, args=[details["recipient_email"], details["subject"], details["message"], details["attachments"]], id=task_name)
+                self.scheduler.add_job(self.send_email, trigger, args=[details["recipient_email"], details["subject"], details["message"], details.get("attachments",)], id=task_name)  # Use details.get()
             elif details["task_type"] == "get_gold_rate":
                 self.scheduler.add_job(self.get_gold_rate, trigger, id=task_name)
             elif details["task_type"] == "convert_file":
                 self.scheduler.add_job(self.convert_file, trigger, args=[details["input_path"], details["output_path"], details["input_format"], details["output_format"]], id=task_name)
             elif details["task_type"] == "compress_files":
                 self.scheduler.add_job(self.compress_files, trigger, args=[details["directory"], details["output_path"], details["compression_format"]], id=task_name)
+
+    def start_scheduler(self):
+        """Start the scheduler."""
+        self.scheduler.start()
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("Scheduler stopped.")
+            self.scheduler.shutdown()
 
 # CLI Interface
 if __name__ == "__main__":
@@ -351,4 +425,60 @@ if __name__ == "__main__":
     add_parser.add_argument("--output-path", type=str, help="Output file path for conversion or compression")
     add_parser.add_argument("--input-format", type=str, help="Input file format for conversion")
     add_parser.add_argument("--output-format", type=str, help="Output file format for conversion")
-   
+
+    # Remove Task Parser
+    remove_parser = subparsers.add_parser("remove", help="Remove a task")
+    remove_parser.add_argument("--task-name", type=str, required=True, help="Name of the task to remove")
+
+    # List Tasks Parser
+    list_parser = subparsers.add_parser("list", help="List all scheduled tasks")
+
+    # Start Scheduler Parser
+    start_parser = subparsers.add_parser("start", help="Start the scheduler")
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Create TaskManager object
+    manager = TaskManager()
+
+    # Handle commands
+    if args.command == "add":
+        manager.add_task(
+            interval=args.interval,
+            unit=args.unit,
+            task_type=args.task_type,
+            directory=args.directory,
+            age_days=args.age_days,
+            formats=args.formats,
+            recipient_email=args.recipient_email,
+            subject=args.subject,
+            message=args.message,
+            attachments=args.attachments,
+            input_path=args.input_path,
+            output_path=args.output_path,
+            input_format=args.input_format,
+            output_format=args.output_format,
+        )
+    elif args.command == "remove":
+        manager.remove_task(args.task_name)
+    elif args.command == "list":
+        manager.list_tasks()
+    elif args.command == "start":
+        manager.start_scheduler()
+    else:
+        parser.print_help()
+
+    # Start the scheduler thread only if no other command is given
+    if not args.command:
+        scheduler_thread = threading.Thread(target=manager.start_scheduler, daemon=True)
+        scheduler_thread.start()
+        print("Scheduler started in the background.")  # Confirmation message
+
+        # Keep the main thread alive
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("Scheduler stopped.")
+            manager.scheduler.shutdown()
