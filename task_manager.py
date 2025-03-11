@@ -7,6 +7,7 @@ import json
 import threading
 import argparse
 import requests
+import pandas as pd
 import smtplib
 import zipfile
 import tarfile
@@ -234,7 +235,7 @@ class TaskManager:
 
     # Gold Rate Scraping Task
     def get_gold_rate(self):
-        """Scrape gold rates from a website."""
+        """Scrape gold rates from a website and store in an Excel file."""
         url = "https://www.bankbazaar.com/gold-rate-tamil-nadu.html"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -249,46 +250,92 @@ class TaskManager:
         if price_span:
             gold_price = price_span.get_text(strip=True)
             self.logger.info(f"Gold rate: {gold_price}")
+
+            # Store in Excel
+            excel_file = "gold_rates.xlsx"
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+            try:
+                if os.path.exists(excel_file):
+                    # Append to existing file
+                    df = pd.read_excel(excel_file)
+                    new_row = {"Timestamp": timestamp, "Gold Price": gold_price}
+                    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                    df.to_excel(excel_file, index=False)
+                else:
+                    # Create new file
+                    df = pd.DataFrame({"Timestamp": [timestamp], "Gold Price": [gold_price]})
+                    df.to_excel(excel_file, index=False)
+            except Exception as e:
+                self.logger.error(f"Error writing to excel file: {e}")
+            finally:
+                # Optionally, you can add code here to explicitly close any file handles
+                pass
+
+            self.logger.info(f"Gold rate stored in {excel_file}")
+            self.log_to_mongodb("get_gold_rate", {"gold_price": gold_price, "timestamp": timestamp}, "Gold rate stored")
+
             return gold_price
         else:
             self.logger.error("Gold price not found.")
             return None
 
-    # File Conversion and Compression Task
-    def convert_file(self, input_path, output_path, input_format, output_format):
-        """Convert a file from one format to another."""
+
+    # File Conversion 
+    def convert_file(self, input_dir, output_dir, input_format, output_format):
+        """Convert files in the input directory to the output directory."""
         try:
-            if input_format == "txt" and output_format == "csv":
-                with open(input_path, "r") as f:
-                    content = f.read()
-                with open(output_path, "w") as f:
-                    f.write(content.upper())
-            elif input_format == "txt" and output_format == "pdf":
-                with open(input_path, "r") as f:
-                    content = f.read()
-                pdf = FPDF()
-                pdf.add_page()
-                pdf.set_font("Arial", size=12)
-                pdf.multi_cell(0, 10, content)
-                pdf.output(output_path)
-            elif input_format == "csv" and output_format == "xlsx":
-                df = pd.read_csv(input_path)
-                df.to_excel(output_path, index=False)
-            elif input_format == "docx" and output_format == "pdf":
-                doc = Document(input_path)
-                pdf = FPDF()
-                pdf.add_page()
-                for para in doc.paragraphs:
-                    pdf.set_font("Arial", size=12)
-                    pdf.multi_cell(0, 10, para.text)
-                pdf.output(output_path)
-            else:
-                raise ValueError("Unsupported conversion format")
-            self.logger.info(f"Converted '{input_path}' to '{output_path}'")
-            self.log_to_mongodb("convert_file", {"input": input_path, "output": output_path}, "Conversion successful")
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+
+            for filename in os.listdir(input_dir):
+                if filename.lower().endswith(f".{input_format}"):
+                    input_path = os.path.join(input_dir, filename)
+                    output_filename = os.path.splitext(filename)[0] + f".{output_format}"
+                    output_path = os.path.join(output_dir, output_filename)
+
+                    try:
+                        if input_format == "txt" and output_format == "csv":
+                            with open(input_path, "r") as f:
+                                content = f.read()
+                            with open(output_path, "w") as f:
+                                f.write(content.upper())
+                        elif input_format == "txt" and output_format == "pdf":
+                            with open(input_path, "r") as f:
+                                content = f.read()
+                            pdf = FPDF()
+                            pdf.add_page()
+                            pdf.set_font("Arial", size=12)
+                            pdf.multi_cell(0, 10, content)
+                            pdf.output(output_path)
+                        elif input_format == "csv" and output_format == "xlsx":
+                            df = pd.read_csv(input_path)
+                            df.to_excel(output_path, index=False)
+                        elif input_format == "docx" and output_format == "pdf":
+                            doc = Document(input_path)
+                            pdf = FPDF()
+                            pdf.add_page()
+                            for para in doc.paragraphs:
+                                pdf.set_font("Arial", size=12)
+                                pdf.multi_cell(0, 10, para.text)
+                            pdf.output(output_path)
+                        else:
+                            raise ValueError("Unsupported conversion format")
+
+                        self.logger.info(f"Converted '{input_path}' to '{output_path}'")
+                        self.log_to_mongodb("convert_file", {"input": input_path, "output": output_path}, "Conversion successful")
+
+                    except Exception as e:
+                        self.logger.error(f"Error converting file '{input_path}': {e}")
+                        self.log_to_mongodb("convert_file", {"input": input_path, "output": output_path}, f"Error: {e}", level="ERROR")
+
+            self.logger.info(f"Converted files from '{input_dir}' to '{output_dir}'")
+            self.log_to_mongodb("convert_file", {"input_dir": input_dir, "output_dir": output_dir}, "Conversion successful")
+
         except Exception as e:
-            self.logger.error(f"Error converting file: {e}")
-            self.log_to_mongodb("convert_file", {"input": input_path, "output": output_path}, f"Error: {e}", level="ERROR")
+            self.logger.error(f"Error converting files in directory: {e}")
+            self.log_to_mongodb("convert_file", {"input_dir": input_dir, "output_dir": output_dir}, f"Error: {e}", level="ERROR")
+
 
     def compress_files(self, directory, output_path, compression_format):
         """Compress files in a directory."""
@@ -336,7 +383,17 @@ class TaskManager:
         elif task_type == "get_gold_rate":
             self.scheduler.add_job(self.get_gold_rate, trigger, id=task_name)
         elif task_type == "convert_file":
-            self.scheduler.add_job(self.convert_file, trigger, args=[filtered_kwargs["input_path"], filtered_kwargs["output_path"], filtered_kwargs["input_format"], filtered_kwargs["output_format"]], id=task_name)
+            self.scheduler.add_job(
+                self.convert_file,
+                trigger,
+                args=[
+                    filtered_kwargs["input_dir"],
+                    filtered_kwargs["output_dir"],
+                    filtered_kwargs["input_format"],
+                    filtered_kwargs["output_format"],
+                ],
+                id=task_name,
+            )
         elif task_type == "compress_files":
             self.scheduler.add_job(self.compress_files, trigger, args=[filtered_kwargs["directory"], filtered_kwargs["output_path"], filtered_kwargs["compression_format"]], id=task_name)
         else:
@@ -390,7 +447,7 @@ class TaskManager:
             elif details["task_type"] == "get_gold_rate":
                 self.scheduler.add_job(self.get_gold_rate, trigger, id=task_name)
             elif details["task_type"] == "convert_file":
-                self.scheduler.add_job(self.convert_file, trigger, args=[details["input_path"], details["output_path"], details["input_format"], details["output_format"]], id=task_name)
+                self.scheduler.add_job(self.convert_file, trigger, args=[details["input_dir"], details["output_dir"], details["input_format"], details["output_format"]], id=task_name)
             elif details["task_type"] == "compress_files":
                 self.scheduler.add_job(self.compress_files, trigger, args=[details["directory"], details["output_path"], details["compression_format"]], id=task_name)
 
@@ -421,10 +478,11 @@ if __name__ == "__main__":
     add_parser.add_argument("--subject", type=str, help="Email subject")
     add_parser.add_argument("--message", type=str, help="Email message")
     add_parser.add_argument("--attachments", nargs="*", help="Email attachments")
-    add_parser.add_argument("--input-path", type=str, help="Input file path for conversion")
-    add_parser.add_argument("--output-path", type=str, help="Output file path for conversion or compression")
+    add_parser.add_argument("--input-dir", type=str, help="Input directory for conversion")
+    add_parser.add_argument("--output-dir", type=str, help="Output directory for conversion")
     add_parser.add_argument("--input-format", type=str, help="Input file format for conversion")
     add_parser.add_argument("--output-format", type=str, help="Output file format for conversion")
+    add_parser.add_argument("--compression-format", type=str, choices=["zip", "tar"], help="Compression format (zip or tar)")
 
     # Remove Task Parser
     remove_parser = subparsers.add_parser("remove", help="Remove a task")
@@ -455,10 +513,11 @@ if __name__ == "__main__":
             subject=args.subject,
             message=args.message,
             attachments=args.attachments,
-            input_path=args.input_path,
-            output_path=args.output_path,
+            input_dir=args.input_dir,
+            output_dir=args.output_dir,
             input_format=args.input_format,
             output_format=args.output_format,
+            compression_format=args.compression_format,
         )
     elif args.command == "remove":
         manager.remove_task(args.task_name)
