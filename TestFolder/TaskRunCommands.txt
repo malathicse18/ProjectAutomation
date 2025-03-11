@@ -1,0 +1,15 @@
+Email automation run commands
+
+(venv) PS C:\Users\malatk\Music\ProjectAutomation> python task_manager.py add --interval 1 --unit minutes --task-type send_email --recipient-email "emails.csv" --subject "Daily Report" --message "Good morning" 
+
+File organize run commands
+
+(venv) PS C:\Users\malatk\Music\ProjectAutomation> python task_manager.py add --interval 1 --unit minutes --task-type organize_files --directory "C:\Users\malatk\OneDrive - Capgemini\Attachments" 
+
+Remove Task
+
+python task_manager.py remove --task-name send_email_task_1
+
+List task
+
+ python task_manager.py list
